@@ -1,7 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <string>
-#include <unordered_set>
+#include <set>
 #include <vector>
 #include <map>
 #include <regex>
@@ -12,12 +12,14 @@ using Formula = tuple<Cell, char, Cell>;
 enum valueType {column, number, formula};
 
 void get_column_names(ifstream*, vector<string>*);
-void parse_lines(ifstream*, vector<string>*, map<Cell, int>*, map<Cell, Formula>*);
+void parse_lines(ifstream*, vector<string>*, vector<int>*, map<Cell, int>*, map<Cell, Formula>*);
 Formula parse_formula(string);
 int check_value(string);
-void add_to_set(string, unordered_set<string>*);
+void add_to_set(string, set<string>*);
 void calculate_values(map<Cell, int>*, map<Cell, Formula>*);
-void calculate(int, int, char);
+int calculate(int, int, char);
+void print_result(map<Cell, int>*, vector<string>*, vector<int>*);
+
 
 int main(int argc, char* argv[]){
 	
@@ -30,29 +32,20 @@ int main(int argc, char* argv[]){
 	ifstream f(argv[1]);
 
 	vector<string> columns;
+	vector<int> rows;
 	map<Cell, int> values;
 	map<Cell, Formula> formulas;
 	
 	if (f.good()){
 		try{
 			get_column_names(&f,  &columns);
-			parse_lines(&f, &columns, &values, &formulas);
+			parse_lines(&f, &columns, &rows, &values, &formulas);
+			calculate_values(&values, &formulas);
+			print_result(&values, &columns, &rows);
 		}catch(char const* s){
 			cout << s << endl;
 		}
 	}
-
-	cout<<"size of table is "<<(values.size()+formulas.size())<<endl;
-	/*
-	for(auto it=values.begin();it!=values.end();it++){
-		cout<<it->first.first<<it->first.second<<": "<<it->second<<endl;
-	}
-	for(auto it=formulas.begin();it!=formulas.end();it++){
-		cout<<it->first.first<<it->first.second<<": =";
-		cout<<get<0>(it->second).first<<get<0>(it->second).second;
-		cout <<get<1>(it->second);
-		cout<<get<2>(it->second).first<<get<2>(it->second).second<<endl;
-	}*/
 
 	f.close();
 
@@ -72,7 +65,7 @@ void get_column_names(ifstream* f, vector<string>* v){
 	string temp, cols;
 	size_t pos;
 	bool empty_cell = false;
-	unordered_set<string> columns;
+	set<string> columns;
 
 	getline(*f, cols, '\n');
 
@@ -105,9 +98,19 @@ void get_column_names(ifstream* f, vector<string>* v){
 	}
 }
 
-void parse_lines(ifstream* f, vector<string>* v, map<Cell, int>* m_v, map<Cell, Formula>* m_f){
+void parse_lines(ifstream* f, vector<string>* v_c, vector<int>* v_r, map<Cell, int>* m_v, map<Cell, Formula>* m_f){
+	/*
+	input:
+		*f - pointer to the opened file
+		*v - pointer to the vector with column names
+		*m_v - pointer to map of cells->values
+		*m_f - pointer to map of cells->formulas
+	description:
+		read csv file to the end and fill the maps with cell address and its value
+		if it not match format throwing error
+	*/
 	string temp, line;
-	unordered_set<string> rows;
+	set<string> rows;
 
 	while(getline(*f, line)){	
 		int value, row, count=0;
@@ -117,11 +120,10 @@ void parse_lines(ifstream* f, vector<string>* v, map<Cell, int>* m_v, map<Cell, 
 			throw "An empty line";
 		}
 		size_t pos = line.find(",");
-		
 
 		while(pos != string::npos){
 			pos = line.find(",");
-			if (count > v->size()+1){
+			if (count > v_c->size()+1){
 				throw "More values in the line than columns";
 			}
 			
@@ -140,6 +142,7 @@ void parse_lines(ifstream* f, vector<string>* v, map<Cell, int>* m_v, map<Cell, 
 					}
 
 					add_to_set(temp, &rows);
+					v_r->push_back(row);
 
 					count++;
 					continue;
@@ -152,10 +155,10 @@ void parse_lines(ifstream* f, vector<string>* v, map<Cell, int>* m_v, map<Cell, 
 			switch(check_value(temp)){
 				case valueType::number :
 					value = stoi(temp);
-					m_v->insert({{v->at(count-1), row}, value});
+					m_v->insert({{v_c->at(count-1), row}, value});
 				break;
 				case valueType::formula:
-					m_f->insert({{v->at(count-1), row}, parse_formula(temp)});
+					m_f->insert({{v_c->at(count-1), row}, parse_formula(temp)});
 				break;
 				default:
 					throw "Incorrect value";
@@ -163,7 +166,7 @@ void parse_lines(ifstream* f, vector<string>* v, map<Cell, int>* m_v, map<Cell, 
 			}
 			count++;
 		}
-		if(count != v->size()+1)
+		if(count != v_c->size()+1)
 			throw "Number of columns and values are different";
 	}
 }
@@ -238,7 +241,7 @@ Formula parse_formula(string str){
 	return make_tuple(left, str[op], right);
 }
 
-void add_to_set(string str, unordered_set<string>* s){
+void add_to_set(string str, set<string>* s){
 	auto search = s->find(str);
 	if (search != s->end()){
 		throw "Value repeats (column or row name)";
@@ -247,8 +250,87 @@ void add_to_set(string str, unordered_set<string>* s){
 }
 
 void calculate_values(map<Cell, int>* m_v, map<Cell, Formula>* m_f){
+	char op;
+	int res;
+	auto it = m_f->begin();
+	set<Cell> safe;
+	safe.insert(it->first);
 
+	while(m_f->size()){
+		//search1, search2 - arguments in formula
+
+		auto search1 = m_f->find(get<0>(it->second));
+		auto search2 = m_f->find(get<2>(it->second));
+
+		if(search1==m_f->end() && search2==m_f->end()){
+			//case with no referencing to other formulas
+			auto val1 = m_v->find(get<0>(it->second));
+			auto val2 = m_v->find(get<2>(it->second));
+			op = get<1>(it->second);
+
+			if(val1==m_v->end() || val2==m_v->end()){
+				throw "Incorrect reference in the formula";
+			}
+
+			res = calculate(val1->second, val2->second, op);
+			m_v->insert({it->first, res});
+			safe.erase(it->first);
+			m_f->erase(it++);
+		}
+		else if(search1!=m_f->end()){
+			auto check = safe.find(search1->first);
+			if (check != safe.end()){
+				throw "Recursion in the formulas";
+			}
+			safe.insert(search1->first);
+		}
+		else{
+			auto check = safe.find(search2->first);
+			if (check != safe.end()){
+				throw "Recursion in the formulas";
+			}
+			safe.insert(search2->first);
+		}
+
+		if(safe.size()){
+			it = m_f->find(*safe.rbegin());
+		}
+	}
 }
-void calculate(int arg1, int arg2, char op){
 
+int calculate(int arg1, int arg2, char op){
+	switch(op){
+		case '+':
+			return arg1+arg2;
+		break;
+		case '-':
+			return arg1-arg2;
+		break;
+		case '*':
+			return arg1*arg2;
+		break;
+		case '/':
+			if (arg2==0){
+				throw "division by 0";
+			}
+			return arg1/arg2;
+		break;
+		default:
+			throw "incorrect operation";
+		break;
+	}
+}
+
+void print_result(map<Cell, int>* m, vector<string>* v_c, vector<int>* v_r){
+	for(auto it=v_c->begin();it!=v_c->end();it++){
+		cout<<","<<*it;
+	}
+	cout << endl;
+	for(auto i=v_r->begin();i!=v_r->end();i++){
+		cout<<*i;
+		for(auto j=v_c->begin();j!=v_c->end();j++){
+			cout<<","<< m->find({*j, *i})->second;
+		}		
+		cout<<endl;
+	}
 }
