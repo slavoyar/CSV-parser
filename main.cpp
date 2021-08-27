@@ -9,16 +9,15 @@
 using namespace std;
 using Cell = pair<string, int>;
 using Formula = tuple<Cell, char, Cell>;
+enum valueType {column, number, formula};
 
 void get_column_names(ifstream*, vector<string>*);
-void parse_lines(ifstream*, map<Cell, int>*, vector<string>*);
-void parse_formula(string);
-void show_vector(vector<string>*);
-void show_map(map<Cell, int>*);
-
-bool check_if_column(string);
-bool check_if_number(string);
+void parse_lines(ifstream*, vector<string>*, map<Cell, int>*, map<Cell, Formula>*);
+Formula parse_formula(string);
 int check_value(string);
+void add_to_set(string, unordered_set<string>*);
+void calculate_values(map<Cell, int>*, map<Cell, Formula>*);
+void calculate(int, int, char);
 
 int main(int argc, char* argv[]){
 	
@@ -37,21 +36,25 @@ int main(int argc, char* argv[]){
 	if (f.good()){
 		try{
 			get_column_names(&f,  &columns);
-			show_vector(&columns);
-			parse_lines(&f, &values, &columns);
+			parse_lines(&f, &columns, &values, &formulas);
 		}catch(char const* s){
 			cout << s << endl;
 		}
 	}
 
-	cout<<"size of table is "<<values.size()<<endl;
+	cout<<"size of table is "<<(values.size()+formulas.size())<<endl;
+	/*
 	for(auto it=values.begin();it!=values.end();it++){
 		cout<<it->first.first<<it->first.second<<": "<<it->second<<endl;
 	}
+	for(auto it=formulas.begin();it!=formulas.end();it++){
+		cout<<it->first.first<<it->first.second<<": =";
+		cout<<get<0>(it->second).first<<get<0>(it->second).second;
+		cout <<get<1>(it->second);
+		cout<<get<2>(it->second).first<<get<2>(it->second).second<<endl;
+	}*/
 
 	f.close();
-
-	parse_formula("=Cell1+Bell2");
 
 	return 0;
 }
@@ -69,7 +72,7 @@ void get_column_names(ifstream* f, vector<string>* v){
 	string temp, cols;
 	size_t pos;
 	bool empty_cell = false;
-	unordered_set<string> s;
+	unordered_set<string> columns;
 
 	getline(*f, cols, '\n');
 
@@ -92,12 +95,8 @@ void get_column_names(ifstream* f, vector<string>* v){
 			temp = cols;
 		}
 
-		if (check_if_column(temp) && temp.size()>0){
-			auto search = s.find(temp);
-			if (search != s.end()){
-				throw "Column names repeat";
-			}
-			s.insert(temp);
+		if (check_value(temp)==valueType::column){
+			add_to_set(temp, &columns);
 			v->push_back(temp);
 		}
 		else{
@@ -106,28 +105,9 @@ void get_column_names(ifstream* f, vector<string>* v){
 	}
 }
 
-bool check_if_column(string str){
-	/*
-	input:
-		str - name of a column in string
-	output:
-		boolean 
-	description:
-		getting the name of a column
-		if it consists of letters return true
-		else false
-	*/
-	for (auto it=str.begin();it!=str.end();it++){
-		if( (*it<'a' || *it>'z') && (*it<'A' || *it>'Z'))
-		{
-			return 0;
-		}
-	}
-	return 1;
-}
-
-void parse_lines(ifstream* f, map<Cell, int>* m, vector<string>* v){
+void parse_lines(ifstream* f, vector<string>* v, map<Cell, int>* m_v, map<Cell, Formula>* m_f){
 	string temp, line;
+	unordered_set<string> rows;
 
 	while(getline(*f, line)){	
 		int value, row, count=0;
@@ -137,11 +117,12 @@ void parse_lines(ifstream* f, map<Cell, int>* m, vector<string>* v){
 			throw "An empty line";
 		}
 		size_t pos = line.find(",");
+		
 
 		while(pos != string::npos){
 			pos = line.find(",");
 			if (count > v->size()+1){
-				throw "More values in a line than columns";
+				throw "More values in the line than columns";
 			}
 			
 			if (pos != string::npos){
@@ -150,10 +131,16 @@ void parse_lines(ifstream* f, map<Cell, int>* m, vector<string>* v){
 
 				if(!row_done){
 					row_done = true;
-					if (!check_if_number(temp)){
+					if (check_value(temp) != valueType::number){
 						throw "Row name is not a number";
 					}
 					row = stoi(temp);
+					if(row<1){
+						throw "Row number cant be 0 or negative";
+					}
+
+					add_to_set(temp, &rows);
+
 					count++;
 					continue;
 				}
@@ -162,13 +149,17 @@ void parse_lines(ifstream* f, map<Cell, int>* m, vector<string>* v){
 				temp = line;
 			}
 
-			if (check_if_number(temp)){
-				value = stoi(temp);
-				//cout<<v->at(count-1)<<row<<": "<<value<<endl;
-				m->insert({{v->at(count-1), row}, value});
-			}
-			else{
-				throw "There is incorrect value in the table";
+			switch(check_value(temp)){
+				case valueType::number :
+					value = stoi(temp);
+					m_v->insert({{v->at(count-1), row}, value});
+				break;
+				case valueType::formula:
+					m_f->insert({{v->at(count-1), row}, parse_formula(temp)});
+				break;
+				default:
+					throw "Incorrect value";
+				break;
 			}
 			count++;
 		}
@@ -177,55 +168,45 @@ void parse_lines(ifstream* f, map<Cell, int>* m, vector<string>* v){
 	}
 }
 
-bool check_if_number(string str){
-	for (auto it = str.begin(); it != str.end(); it++){
-		if( *it < '0' || *it > '9')
-		{
-			return 0;
-		}
-	}
-	return 1;
-}
-
-void show_vector(vector<string>* s){
-	for (auto it=s->begin();it!=s->end();it++){
-		cout<<", "<<*it;
-	}
-	cout<<endl;
-}
-
 int check_value(string str){
 	/*
 	input:
 		str - value in string
+	output:
+		int - type
 	description:
 		using regular expression determine type of value in the cell
 		it can be either number or formula
 		otherwise throwing an error
 	*/
+	regex row("[1-9][0-9]*");
 	regex number("-?[1-9][0-9]*|0");
 	regex formula("=[a-zA-Z]+[1-9][0-9]*[///+-//*][a-zA-Z]+[1-9][0-9]*");
+	regex column("[a-zA-Z]+");
 
-	if (regex_match(str, number)){
-		return 1;
+	if (regex_match(str, column)){
+		return valueType::column;
+	}
+	else if(regex_match(str, number)){
+		return valueType::number;
 	}
 	else if(regex_match(str, formula)){
-		return 2;
+		return valueType::formula;
 	}
 	else{
 		throw "Incorrect value in the table";
 	}
 }
 
-void parse_formula(string str){
+Formula parse_formula(string str){
 	/*
 	input:
 		str - formula in string
-		*m - pointer to map for formulas
+	output:
+		Formula - tuple of 2 cells and an operation
 	description:
 		getting formula in string format
 		determine cell parameters and operation
-		inserting formula into map with formulas
 	*/
 	int cell1 = 0, cell2, op;
 	for (int i=0; i<str.length(); i++){
@@ -254,6 +235,20 @@ void parse_formula(string str){
 	left = make_pair(left_col, left_row);
 	right = make_pair(right_col, right_row);
 
-	Formula formula = make_tuple(left, str[op], right);
+	return make_tuple(left, str[op], right);
+}
+
+void add_to_set(string str, unordered_set<string>* s){
+	auto search = s->find(str);
+	if (search != s->end()){
+		throw "Value repeats (column or row name)";
+	}
+	s->insert(str);
+}
+
+void calculate_values(map<Cell, int>* m_v, map<Cell, Formula>* m_f){
+
+}
+void calculate(int arg1, int arg2, char op){
 
 }
