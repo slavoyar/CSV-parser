@@ -211,7 +211,7 @@ Formula parse_formula(string str){
 		getting formula in string format
 		determine cell parameters and operation
 	*/
-	int cell1 = 0, cell2, op;
+	int cell1 = 0, cell2, op = 0;
 	for (int i=0; i<str.length(); i++){
 		if (str[i]=='+' || str[i]=='-' || str[i]=='/' || str[i]=='*'){
 			op = i;
@@ -220,7 +220,8 @@ Formula parse_formula(string str){
 		{
 			if(cell1==0){
 				cell1 = i;
-			}else{
+			}
+			else if(op!=0){
 				cell2 = i;
 				break;
 			}
@@ -258,6 +259,17 @@ void calculate_values(map<Cell, int>* m_v, map<Cell, Formula>* m_f){
 
 	while(m_f->size()){
 		//search1, search2 - arguments in formula
+		if(it==m_f->end()){
+			it = m_f->begin();	
+		}
+
+		if(safe.size()){
+			/*for(auto j=safe.begin();j!=safe.end();j++){
+				cout<<j->first<<j->second<<" ";
+			}*/
+			it = m_f->find(*safe.begin());
+		}
+		//cout<<"iterator: "<<it->first.first<<it->first.second<<endl;
 
 		auto search1 = m_f->find(get<0>(it->second));
 		auto search2 = m_f->find(get<2>(it->second));
@@ -269,6 +281,9 @@ void calculate_values(map<Cell, int>* m_v, map<Cell, Formula>* m_f){
 			op = get<1>(it->second);
 
 			if(val1==m_v->end() || val2==m_v->end()){
+				cout<<it->first.first<<it->first.second<<": ";
+				cout<<val1->first.first<<val1->first.second<<op;
+				cout<<val2->first.first<<val2->first.second<<endl;
 				throw "Incorrect reference in the formula";
 			}
 
@@ -280,21 +295,22 @@ void calculate_values(map<Cell, int>* m_v, map<Cell, Formula>* m_f){
 		else if(search1!=m_f->end()){
 			auto check = safe.find(search1->first);
 			if (check != safe.end()){
+				cout<<search1->first.first<<search1->first.second<<endl;
 				throw "Recursion in the formulas";
 			}
+			it = search1;
 			safe.insert(search1->first);
 		}
 		else{
 			auto check = safe.find(search2->first);
 			if (check != safe.end()){
+				cout<<search2->first.first<<search2->first.second<<endl;
 				throw "Recursion in the formulas";
 			}
+			it = search2;
 			safe.insert(search2->first);
 		}
 
-		if(safe.size()){
-			it = m_f->find(*safe.rbegin());
-		}
 	}
 }
 
