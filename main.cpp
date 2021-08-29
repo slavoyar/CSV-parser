@@ -30,8 +30,10 @@ int main(int argc, char* argv[]){
 		return 0;
 	}
 
+	//open file to read
 	ifstream f(argv[1]);
 
+	//containers to store values
 	vector<string> columns;
 	vector<int> rows;
 	map<Cell, int> values;
@@ -48,6 +50,7 @@ int main(int argc, char* argv[]){
 		}
 	}
 
+	//closing file 
 	f.close();
 
 	return 0;
@@ -103,7 +106,8 @@ void parse_lines(ifstream* f, vector<string>* v_c, vector<int>* v_r, map<Cell, i
 	/*
 	input:
 		*f - pointer to the opened file
-		*v - pointer to the vector with column names
+		*v_c - pointer to the vector with column names
+		*v_r - pointer to the vector with row names
 		*m_v - pointer to map of cells->values
 		*m_f - pointer to map of cells->formulas
 	description:
@@ -252,6 +256,16 @@ void add_to_set(string str, set<string>* s){
 }
 
 void calculate_values(map<Cell, int>* m_v, map<Cell, Formula>* m_f){
+	/*
+	input:
+		*m_v - pointer to map of cells->values
+		*m_f - pointer to map of cells->formulas
+	description:
+		going through all formulas and try to compute it
+		if its possible add result to the values map
+		else throwing error message
+	*/
+
 	char op;
 	int res;
 	auto it = m_f->begin();
@@ -314,6 +328,17 @@ void calculate_values(map<Cell, int>* m_v, map<Cell, Formula>* m_f){
 }
 
 int calculate(int arg1, int arg2, char op){
+	/*
+	input:
+		arg1 - first argument 
+		arg2 - second argument 
+		op - operation
+	output:
+		result - integer value
+	description:
+		get result of given arguments and an operation
+	*/
+
 	switch(op){
 		case '+':
 			return arg1+arg2;
@@ -337,6 +362,14 @@ int calculate(int arg1, int arg2, char op){
 }
 
 void print_result(map<Cell, int>* m, vector<string>* v_c, vector<int>* v_r){
+	/*
+	input:
+		*m - pointer to the values map
+		*v_c - pointer to the vector with column names
+		*v_r - pointer to the vector with row names
+	description:
+		going through all values in the map and printing it to the screen
+	*/
 	for(auto it=v_c->begin();it!=v_c->end();it++){
 		cout<<","<<*it;
 	}
